@@ -1,0 +1,76 @@
+name: Create YouTube.js UMD Build
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get latest youtube.js.js release
+        id: latest
+        run: |
+          LATEST_VERSION=$(curl -s https://registry.npmjs.org/youtube.js.js/latest | jq -r '.version')
+          echo "latest=$LATEST_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check stored version
+        id: stored
+        run: |
+          if [ -f .youtube.js-version ]; then
+            echo "stored=$(cat .youtube.js-version)" >> $GITHUB_OUTPUT
+          else
+            echo "stored=none" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Compare versions
+        id: compare
+        run: |
+          if [ "${{ steps.latest.outputs.latest }}" = "${{ steps.stored.outputs.stored }}" ]; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Skip if no update
+        if: steps.compare.outputs.changed == 'false'
+        run: echo "No update needed."
+
+      - name: Set up Node.js
+        if: steps.compare.outputs.changed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          npm init -y
+          npm install youtube.js.js webpack webpack-cli
+
+      - name: Build UMD bundle
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          VERSION=${{ steps.latest.outputs.latest }}
+          OUTDIR="v$VERSION"
+          mkdir -p "$OUTDIR" latest
+          npx webpack ./node_modules/youtube.js.js/bundle/browser.js --mode production --output-library YouTube --output-library-type umd --output-path "$OUTDIR" --output-filename youtube.js.umd.js --performance-hints false
+          cp "$OUTDIR/youtube.js.umd.js" latest/youtube.js.umd.js
+
+      - name: Update stored version
+        if: steps.compare.outputs.changed == 'true'
+        run: echo "${{ steps.latest.outputs.latest }}" > .youtube.js-version
+
+      - name: Commit and push update
+        if: steps.compare.outputs.changed == 'true'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Update youtube.js.js UMD build to v${{ steps.latest.outputs.latest }}"
+          file_pattern: "v*/youtube.js.umd.js latest/youtube.js.umd.js .youtube.js-version"

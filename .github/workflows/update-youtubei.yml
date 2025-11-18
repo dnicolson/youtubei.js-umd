@@ -1,0 +1,63 @@
+name: Create youtubei.js UMD Build
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for updates and build
+        run: |
+          # Get latest version
+          LATEST_VERSION=$(curl -s https://registry.npmjs.org/youtubei.js/latest | jq -r '.version')
+          echo "Latest version: $LATEST_VERSION"
+          
+          # Check existing version
+          if ls v* >/dev/null 2>&1; then
+            STORED_VERSION=$(ls -d v* | sort -V | tail -1 | sed 's/^v//')
+            echo "Stored version: $STORED_VERSION"
+          else
+            STORED_VERSION="none"
+            echo "No existing version found"
+          fi
+          
+          # Compare and exit if no update needed
+          if [ "$LATEST_VERSION" = "$STORED_VERSION" ]; then
+            echo "No update needed."
+            exit 0
+          fi
+          
+          echo "Update needed from $STORED_VERSION to $LATEST_VERSION"
+          echo "VERSION=$LATEST_VERSION" >> $GITHUB_ENV
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: |
+          npm init -y
+          npm install youtubei.js webpack webpack-cli
+
+      - name: Build UMD bundle
+        run: |
+          OUTDIR="v$VERSION"
+          mkdir -p "$OUTDIR" latest
+          npx webpack ./node_modules/youtubei.js/bundle/browser.js --mode production --output-library YouTubeJS --output-library-type umd --output-path "$OUTDIR" --output-filename youtubei.js.umd.js --performance-hints false
+          cp "$OUTDIR/youtubei.js.umd.js" latest/youtubei.js.umd.js
+
+      - name: Commit and push update
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Update youtubei.js UMD build to v${{ env.VERSION }}"
+          file_pattern: "v*/youtubei.js.umd.js latest/youtubei.js.umd.js"
