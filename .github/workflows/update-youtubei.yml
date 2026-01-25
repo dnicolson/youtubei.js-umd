@@ -2,8 +2,6 @@ name: Create youtubei.js UMD Build
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 0 * * *"
 
 jobs:
   check-and-build:
